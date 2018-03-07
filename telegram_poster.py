@@ -36,8 +36,8 @@ if 'CHANNEL' not in os.environ:
 TOKEN = os.environ['TOKEN']
 SUBREDDIT = os.environ['SUBREDDIT']
 CHANNEL = os.environ['CHANNEL']
+MAINTAINER = os.environ['MAINTAINER']
 START_TIME = datetime.utcnow().timestamp()
-
 
 # Filter out old submissions here by reading a 'last_submission.id file'
 def read_last_submission_id():
@@ -79,18 +79,17 @@ while True:
                 link = "https://redd.it/{id}".format(id=submission.id)
                 if not start_posting and submission.created_utc < START_TIME:
                     log.info("Skipping {} - last sent submission not yet found".format(
-                        submission.id))
+                        submission.id))x
                     if submission.id == last_submission_id:
                         start_posting = True
                     continue
 
                 flair = html.escape(submission.link_flair_text or '')
                 title = html.escape(submission.title or '')
-                user = html.escape(submission.author.name or '')
 
-                message_template = "<a href='{link}'>{title}</a> by <b>{user}</b> ({flair})"
+                message_template = "<a href='{link}'>{title}</a>({flair})"
                 if not flair:
-                    message_template = "<a href='{link}'>{title}</a> by <b>{user}</b>"
+                    message_template = "<a href='{link}'>{title}</a>"
 
                 message = message_template.format(flair=flair, title=title, link=link, user=user)
 
@@ -100,5 +99,5 @@ while True:
             except Exception as e:
                 log.exception("Error parsing {}".format(link))
     except Exception as e:
-        log.exception("Error fetching new submissions, restarting in 10 secs")
-        sleep(10)
+        log.exception("Error fetching new submissions, restarting in 1 hour")
+        sleep(3600)
