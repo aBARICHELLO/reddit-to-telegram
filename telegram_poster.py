@@ -12,7 +12,7 @@ import sys
 
 from time import sleep
 from datetime import datetime
-
+from random import randint
 
 log = logging.getLogger('telegram_poster')
 log.setLevel(logging.DEBUG)
@@ -22,7 +22,6 @@ ch.setLevel(logging.DEBUG)
 formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
 ch.setFormatter(formatter)
 log.addHandler(ch)
-
 
 if 'TOKEN' not in os.environ:
     raise RuntimeError("Put bot token in TOKEN env var")
@@ -68,18 +67,17 @@ else:
 r = praw.Reddit(user_agent='Reddit Telegram poster by /u/roignac',
                 site_name="default")
 r.read_only = True
-subreddit = r.subreddit(SUBREDDIT)
-
+subreddit = r.subreddit(SUBREDDIT).hot(limit=24)
 bot = telegram.Bot(token=TOKEN)
 
 while True:
     try:
-        for submission in subreddit.stream.submissions():
+        for submission in subreddit:
             try:
                 link = "https://redd.it/{id}".format(id=submission.id)
                 if not start_posting and submission.created_utc < START_TIME:
                     log.info("Skipping {} - last sent submission not yet found".format(
-                        submission.id))x
+                        submission.id))
                     if submission.id == last_submission_id:
                         start_posting = True
                     continue
@@ -90,14 +88,16 @@ while True:
                 message_template = "<a href='{link}'>{title}</a>({flair})"
                 if not flair:
                     message_template = "<a href='{link}'>{title}</a>"
-
-                message = message_template.format(flair=flair, title=title, link=link, user=user)
+                    message = message_template.format(flair=flair, title=title, link=link)
 
                 log.info("Posting {}".format(link))
-                bot.sendMessage(chat_id=CHANNEL, parse_mode=telegram.ParseMode.HTML, text=message)
+                #bot.sendMessage(chat_id=CHANNEL, parse_mode=telegram.ParseMode.HTML, text=message)
+                bot.sendMessage(chat_id=MAINTAINER, parse_mode=telegram.ParseMode.HTML, text=message)  # DEBUG
                 write_last_submission_id(submission.id)
             except Exception as e:
-                log.exception("Error parsing {}".format(link))
+                log.exception("--- ERROR parsing {}".format(link))
+                bot.sendMessage(chat_id=MAINTAINER, text=e)
     except Exception as e:
-        log.exception("Error fetching new submissions, restarting in 1 hour")
+        log.exception("--- ERROR fetching new submissions, restarting in 1 hour")
         sleep(3600)
+
