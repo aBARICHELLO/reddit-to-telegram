@@ -12,16 +12,7 @@ import sys
 
 from time import sleep
 from datetime import datetime
-from random import randint
 
-log = logging.getLogger('telegram_poster')
-log.setLevel(logging.DEBUG)
-
-ch = logging.StreamHandler(sys.stdout)
-ch.setLevel(logging.DEBUG)
-formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-ch.setFormatter(formatter)
-log.addHandler(ch)
 
 if 'TOKEN' not in os.environ:
     raise RuntimeError("Put bot token in TOKEN env var")
@@ -32,72 +23,81 @@ if 'SUBREDDIT' not in os.environ:
 if 'CHANNEL' not in os.environ:
     raise RuntimeError("Put channel name in CHANNEL env var")
 
+
+log = logging.getLogger('telegram_poster')
+log.setLevel(logging.DEBUG)
+
+ch = logging.StreamHandler(sys.stdout)
+ch.setLevel(logging.DEBUG)
+formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+ch.setFormatter(formatter)
+log.addHandler(ch)
+
 TOKEN = os.environ['TOKEN']
 SUBREDDIT = os.environ['SUBREDDIT']
 CHANNEL = os.environ['CHANNEL']
 MAINTAINER = os.environ['MAINTAINER']
 START_TIME = datetime.utcnow().timestamp()
 
-# Filter out old submissions here by reading a 'last_submission.id file'
-def read_last_submission_id():
+# Read the file with latest submissions
+def read_last_submissions_id():
     try:
-        with open('last_submission.id', 'r') as f:
-            return f.read().strip()
+        with open('last_submissions.id', 'r') as f:
+            content = f.readlines()
+            return [line.strip() for line in content]
     except:
-        return None
+        log.info('File not found, creating a new one.')
+        with open('last_submissions.id', 'w') as f:
+            f.close()
 
-
-def write_last_submission_id(submission_id):
+# Write post id to file after sending to channel
+def write_last_submissions_id(submission_id):
     try:
-        with open('last_submission.id', 'w') as f:
-            f.write(submission_id)
+        with open('last_submissions.id', 'a') as f:
+            f.write(submission_id + "\n")
+            f.close()
     except:
-        log.exception("Error writing submission ID")
+        log.exception("--- ERROR writing submission ID")
 
+# Clear submissions file after two days
+def clear_last_submissions():
+    pass
 
-start_posting = False
-last_submission_id = read_last_submission_id()
+def notify_maintainer(e):
+    bot.sendMessage(chat_id=MAINTAINER, text=str(e))
 
-if not last_submission_id:
-    log.info("Last posted submission not found, starting with all submissions")
-    start_posting = True
-else:
-    log.info("Last posted submission is {}".format(last_submission_id))
+def rest():
+    log.info("--- Finished 'hot' list, rechecking in one hour")
+    sleep(3600)
 
-r = praw.Reddit(user_agent='Reddit Telegram poster by /u/roignac',
-                site_name="default")
+r = praw.Reddit(user_agent='Reddit-to-Telegram', site_name="default")
 r.read_only = True
-subreddit = r.subreddit(SUBREDDIT).hot(limit=24)
 bot = telegram.Bot(token=TOKEN)
 
+while datetime.now().minute != 0:
+    log.info('Waiting for next hour.')
+    sleep(1)
+
 while True:
+    subreddit = r.subreddit(SUBREDDIT).hot(limit=25)
+    last_submissions_id = read_last_submissions_id()
+
     try:
         for submission in subreddit:
-            try:
-                link = "https://redd.it/{id}".format(id=submission.id)
-                if not start_posting and submission.created_utc < START_TIME:
-                    log.info("Skipping {} - last sent submission not yet found".format(
-                        submission.id))
-                    if submission.id == last_submission_id:
-                        start_posting = True
-                    continue
+            link = 'https://redd.it/{id}'.format(id=submission.id)
+            if submission.id in last_submissions_id:  # Repeat until you find a new entry
+                log.info(f'Not posting \"{submission.title}\", repeated entry.')
+                continue
 
-                flair = html.escape(submission.link_flair_text or '')
-                title = html.escape(submission.title or '')
+            flair = html.escape(submission.link_flair_text or '')
+            title = html.escape(submission.title or '')
+            message_template = f'<a href=\'{link}\'>{title}</a>'
 
-                message_template = "<a href='{link}'>{title}</a>({flair})"
-                if not flair:
-                    message_template = "<a href='{link}'>{title}</a>"
-                    message = message_template.format(flair=flair, title=title, link=link)
-
-                log.info("Posting {}".format(link))
-                #bot.sendMessage(chat_id=CHANNEL, parse_mode=telegram.ParseMode.HTML, text=message)
-                bot.sendMessage(chat_id=MAINTAINER, parse_mode=telegram.ParseMode.HTML, text=message)  # DEBUG
-                write_last_submission_id(submission.id)
-            except Exception as e:
-                log.exception("--- ERROR parsing {}".format(link))
-                bot.sendMessage(chat_id=MAINTAINER, text=e)
+            log.info(f'Posting \"{link}\"')
+            bot.sendMessage(chat_id=CHANNEL, parse_mode=telegram.ParseMode.HTML, text=message_template)
+            # bot.sendMessage(chat_id=MAINTAINER, parse_mode=telegram.ParseMode.HTML, text=message_template)  # DEBUG
+            write_last_submissions_id(submission.id)
+            rest()
     except Exception as e:
-        log.exception("--- ERROR fetching new submissions, restarting in 1 hour")
-        sleep(3600)
-
+        log.exception("--- ERROR parsing {}".format(link))
+        notify_maintainer(e)

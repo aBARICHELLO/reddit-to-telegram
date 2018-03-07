@@ -2,6 +2,10 @@
 
 This script will watch the new content on a subreddit and post to a Telegram channel.
 
+This fork is modified so that the bot posts one piece of content from the Hot session of the subreddit every hour at exactly 00 minutes.
+
+TODO: Send image/gif directly instead of only the link.
+
 ## Config
 
 * Create a `praw.ini` file:
